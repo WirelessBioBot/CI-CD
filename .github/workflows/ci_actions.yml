@@ -29,8 +29,9 @@ jobs:
             echo "Waiting for Postgres..."
             sleep 2
           done
-      - name: Initialize DB from dump
-        run: psql postgresql://kubsu:kubsu@localhost:5432/kubsu -f kubsu/dump.sql
+      - name: Initialize schema
+        run: |
+          python -c "import asyncio; from src.database import init_db; asyncio.run(init_db())"
       - name: Build test image
         run: docker build --target builder -t myapp:test .
       - name: Run tests
