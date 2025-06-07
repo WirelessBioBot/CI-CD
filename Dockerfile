@@ -4,9 +4,10 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 
+COPY . .
+
 RUN pip install .[test]
 
-COPY . .
 
 
 FROM python:3.11-slim
