@@ -1,7 +1,9 @@
-name: Actions
+name: Docker Test with Pytest
 
 on:
   push:
+    branches: [ main ]
+  pull_request:
     branches: [ main ]
 
 jobs:
