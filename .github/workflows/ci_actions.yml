@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_DB: test_db
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: kubsu
+          POSTGRES_USER: kubsu
+          POSTGRES_PASSWORD: kubsu
         ports:
           - 5432:5432
         options: >-
@@ -37,7 +37,7 @@ jobs:
       - name: Run tests inside Docker
         run: |
           docker run --rm \
-            -e DATABASE_URL=postgresql://test_user:test_password@host.docker.internal:5432/test_db \
+            -e DATABASE_URL=postgresql://kubsu:kubsu@host.docker.internal:5432/kubsu \
             myapp:latest \
             pytest
 
