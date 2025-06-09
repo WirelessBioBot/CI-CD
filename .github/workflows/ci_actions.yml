@@ -1,15 +1,15 @@
-name: CI & Deploy
+name: Docker Image CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   build-test-deploy:
     runs-on: self-hosted
     services:
       postgres:
-        image: postgres:14
+        image: postgres
         env:
           POSTGRES_DB: kubsu
           POSTGRES_USER: kubsu
@@ -21,20 +21,11 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+          
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Wait for Postgres
-        run: |
-          until pg_isready -h localhost -p 5432 -U kubsu; do
-            echo "Waiting for Postgres..."
-            sleep 2
-          done
-
-      - name: Initialize DB from dump
-        run: psql postgresql://kubsu:kubsu@localhost:5432/kubsu -f kubsu/dump.sql
+        
 
       - name: Build Docker image
         run: docker build -t myapp:test .
@@ -50,7 +41,7 @@ jobs:
             myapp:test \
             pytest tests
 
-
+             
       - name: Build prod image
         run: docker build -t myapp:latest .
 
@@ -66,9 +57,10 @@ jobs:
                 -p ${{ secrets.SSH_PORT }} \
                 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "podman load && \
+            podman rm myapp   || true && \
              podman tag myapp:latest myapp:latest && \
              podman run -d \
                --name myapp \
                --network host \
                myapp:latest \
-               uvicorn src.main:app --host 0.0.0.0 --port 8096"
+               uvicorn src.main:app --host 0.0.0.0 --port 8028"
