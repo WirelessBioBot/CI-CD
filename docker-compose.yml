@@ -12,7 +12,7 @@ services:
     image: pythonapp:latest
     build: ./python_app
     ports:
-      - 8000:8000
+      - 8115:8115
     environment:
       - DATABASE_URL=postgresql+psycopg://kubsu:kubsu@db:5432/kubsu
     depends_on:
@@ -22,4 +22,5 @@ services:
 
 networks:
   mynetwork:
+
 
