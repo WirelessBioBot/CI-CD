@@ -1,0 +1,82 @@
+name: Docker Images Actions
+
+on:
+  push:
+    branches: [ main ]
+    
+jobs:
+  build:
+    name: Build
+    runs-on: self-hosted
+    steps:
+      - name: Add all repository
+        uses: actions/checkout@v3
+        
+      - name: Build all images
+        run: |
+          docker pull postgres:latest
+          docker compose build
+      
+      - name: Clean working directory
+        run: rm -rf $GITHUB_WORKSPACE/*
+
+  test:
+    name: Test
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Add all repository
+        uses: actions/checkout@v3
+
+      - name: Run app
+        run: docker compose up -d
+
+      - name: Wait for Postgres to be ready
+        run: |
+          for i in {1..5}; do
+            docker compose exec db pg_isready -U ${{ secrets.DB_DATA }} && break
+            echo "Waiting for Postgres: ($i/5)"
+            sleep 10
+          done
+
+      - name: Run tests in pythonapp containers
+        run: docker compose exec pythonapp pytest tests
+
+      - name: Stop and remove containers (with tomes)
+        run: docker compose down -v
+
+      - name: Clean working directory
+        run: rm -rf $GITHUB_WORKSPACE/*
+
+  deploy:
+    name: Deploy
+    runs-on: self-hosted
+    needs: test
+    
+    defaults:
+      run:
+        shell: bash
+        
+    steps:
+      - name: Create tar files
+        run: docker save -o pythonapp.tar pythonapp:latest
+
+      - name: Delete pythonapp image
+        run: docker rmi pythonapp:latest
+
+      - name: Push tar files and docker-compose.yml on server
+        run: scp -P ${{ secrets.SERVER_PORT }} ./pythonapp.tar ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }}:/home/${{ secrets.SERVER_NAME }}/tasks/docker
+    
+      - name: Clean working directory
+        run: rm -rf $GITHUB_WORKSPACE/*
+
+      - name: Connect on Server with SSH and start app
+        run: |
+          ssh ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }} -p ${{ secrets.SERVER_PORT }} \
+          "cd /home/${{ secrets.SERVER_NAME }}/tasks/docker && \
+          podman stop pythonappcon && \
+          podman rm pythonappcon && \
+          podman rmi pythonapp:latest && \
+          podman load -i pythonapp.tar && \
+          podman run -d --network=host --name pythonappcon -e DATABASE_URL="${{ secrets.DATABASE_URL }}" pythonapp:latest && \
+          rm pythonapp.tar"
