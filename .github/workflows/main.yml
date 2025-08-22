@@ -74,9 +74,9 @@ jobs:
         run: |
           ssh ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }} -p ${{ secrets.SERVER_PORT }} \
           "cd /home/${{ secrets.SERVER_NAME }}/tasks/docker && \
-          podman stop pythonappcon && \
-          podman rm pythonappcon && \
-          podman rmi pythonapp:latest && \
+          podman stop pythonappcon || true && \
+          podman rm pythonappcon || true && \
+          podman rmi pythonapp:latest || true && \
           podman load -i pythonapp.tar && \
           podman run -d --network=host --name pythonappcon -e DATABASE_URL="${{ secrets.DATABASE_URL }}" pythonapp:latest && \
           rm pythonapp.tar"
