@@ -34,7 +34,7 @@ jobs:
       - name: Wait for Postgres to be ready
         run: |
           for i in {1..5}; do
-            docker compose exec db pg_isready -U ${{ secrets.DB_DATA }} && break
+            docker compose exec db pg_isready -U postgresql+psycopg://kubsu:kubsu@db:5432/kubsu && break
             echo "Waiting for Postgres: ($i/5)"
             sleep 10
           done
