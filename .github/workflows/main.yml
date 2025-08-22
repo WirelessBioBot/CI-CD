@@ -78,5 +78,6 @@ jobs:
           podman rm pythonappcon || true && \
           podman rmi pythonapp:latest || true && \
           podman load -i pythonapp.tar && \
-          podman run -d --network=host --name pythonappcon -e DATABASE_URL="${{ secrets.DATABASE_URL }}" pythonapp:latest && \
+          podman run -d --network=mynetwork --name pythonappcon \
+          -e DATABASE_URL="postgresql+psycopg://kubsu:kubsu@db:5432/kubsu" -p 8115:8115 pythonapp:latest && \
           rm pythonapp.tar"
