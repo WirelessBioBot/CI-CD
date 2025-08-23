@@ -3,81 +3,101 @@ name: Docker Images Actions
 on:
   push:
     branches: [ main ]
-    
+
 jobs:
-  build:
-    name: Build
+  ci:
+    name: Build & Test
     runs-on: self-hosted
     steps:
-      - name: Add all repository
+      - name: Checkout
         uses: actions/checkout@v3
-        
-      - name: Build all images
+
+      - name: Build images
         run: |
           docker pull postgres:latest
           docker compose build
-      
-      - name: Clean working directory
-        run: rm -rf $GITHUB_WORKSPACE/*
 
-  test:
-    name: Test
-    runs-on: self-hosted
-    needs: build
-    steps:
-      - name: Add all repository
-        uses: actions/checkout@v3
-
-      - name: Run app
+      - name: Start stack
         run: docker compose up -d
 
       - name: Wait for Postgres to be ready
         run: |
-          for i in {1..5}; do
-            docker compose exec db pg_isready -U postgresql+psycopg://kubsu:kubsu@db:5432/kubsu && break
-            echo "Waiting for Postgres: ($i/5)"
-            sleep 10
+          for i in {1..12}; do
+            docker compose exec -T db pg_isready -U kubsu -d kubsu && break
+            echo "Waiting for Postgres: ($i/12)"
+            sleep 5
           done
 
-      - name: Run tests in pythonapp containers
-        run: docker compose exec pythonapp pytest tests
+      - name: Run tests in pythonapp container
+        run: docker compose exec -T pythonapp pytest -q tests
 
-      - name: Stop and remove containers (with tomes)
+      - name: Teardown
+        if: always()
         run: docker compose down -v
-
-      - name: Clean working directory
-        run: rm -rf $GITHUB_WORKSPACE/*
 
   deploy:
     name: Deploy
     runs-on: self-hosted
-    needs: test
-    
+    needs: ci
     defaults:
       run:
         shell: bash
-        
     steps:
-      - name: Create tar files
+      - name: Save image to tar
         run: docker save -o pythonapp.tar pythonapp:latest
 
-      - name: Delete pythonapp image
-        run: docker rmi pythonapp:latest
+      - name: Push tar to server
+        run: scp -P ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no \
+          ./pythonapp.tar ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }}:/home/${{ secrets.SERVER_NAME }}/tasks/docker
 
-      - name: Push tar files and docker-compose.yml on server
-        run: scp -P ${{ secrets.SERVER_PORT }} ./pythonapp.tar ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }}:/home/${{ secrets.SERVER_NAME }}/tasks/docker
-    
-      - name: Clean working directory
-        run: rm -rf $GITHUB_WORKSPACE/*
-
-      - name: Connect on Server with SSH and start app
+      - name: Start app on server (Podman)
         run: |
-          ssh ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }} -p ${{ secrets.SERVER_PORT }} \
-          "cd /home/${{ secrets.SERVER_NAME }}/tasks/docker && \
-          podman stop pythonappcon || true && \
-          podman rm pythonappcon || true && \
-          podman rmi pythonapp:latest || true && \
-          podman load -i pythonapp.tar && \
-          podman run -d --network=host --name pythonappcon \
-          -e DATABASE_URL="postgresql+psycopg://kubsu:kubsu@db:5432/kubsu" pythonapp:latest && \
-          rm pythonapp.tar"
+          ssh -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no \
+          ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }} \
+          '
+          set -euo pipefail
+          cd /home/${{ secrets.SERVER_NAME }}/tasks/docker
+
+          # сеть (если уже есть — не ошибка)
+          podman network create mynetwork || true
+
+          # БД
+          podman run -d --replace --name db --network mynetwork \
+            -e POSTGRES_USER=kubsu \
+            -e POSTGRES_PASSWORD=kubsu \
+            -e POSTGRES_DB=kubsu \
+            -v pgdata:/var/lib/postgresql/data \
+            postgres:latest
+
+          # ждём готовность БД
+          for i in {1..12}; do
+            podman exec -it db pg_isready -U kubsu && break
+            echo "waiting for postgres ($i/12)"; sleep 5
+          done
+
+          # обновляем приложение
+          podman rmi pythonapp:latest || true
+          podman load -i pythonapp.tar
+
+          podman run -d --replace --name pythonappcon --network mynetwork \
+            -e DATABASE_URL="postgresql+psycopg://kubsu:kubsu@db:5432/kubsu" \
+            -p 8115:8115 \
+            pythonapp:latest
+
+          rm -f pythonapp.tar
+
+          # небольшая диагностика
+          podman ps
+          '
+
+      # В случае падения — покажем логи
+      - name: Debug logs on failure
+        if: failure()
+        run: |
+          ssh -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=no \
+          ${{ secrets.SERVER_NAME }}@${{ secrets.SERVER }} \
+          '
+          podman ps -a || true
+          echo "== pythonappcon logs =="; podman logs pythonappcon || true
+          echo "== db logs ==";          podman logs db || true
+          '
