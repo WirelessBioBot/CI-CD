@@ -17,5 +17,5 @@ RUN pip install *.whl && pip install pytest pytest-asyncio httpx
 
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/tests ./tests
-EXPOSE 8115
+
 CMD uvicorn src.main:app --host 0.0.0.0 --port 8115
