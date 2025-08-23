@@ -9,31 +9,44 @@ jobs:
     name: Build & Test
     runs-on: self-hosted
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v3
 
-      - name: Build images
-        run: |
-          docker pull postgres:latest
-          docker compose build
+    - name: Build images
+      run: |
+        docker pull postgres:latest
+        docker compose build
 
-      - name: Start stack
-        run: docker compose up -d
+    - name: Start stack
+      run: docker compose up -d
 
-      - name: Wait for Postgres to be ready
-        run: |
-          for i in {1..12}; do
-            docker compose exec -T db pg_isready -U kubsu -d kubsu && break
-            echo "Waiting for Postgres: ($i/12)"
-            sleep 5
-          done
+    - name: Wait for Postgres to be ready
+      run: |
+        for i in {1..12}; do
+          docker compose exec -T db pg_isready -U kubsu -d kubsu && break
+          echo "Waiting for Postgres: ($i/12)"
+          sleep 5
+        done
 
-      - name: Run tests in pythonapp container
-        run: docker compose exec -T pythonapp pytest -q tests
+    - name: Run tests in pythonapp container
+      run: docker compose exec -T pythonapp pytest -q tests
 
-      - name: Teardown
-        if: always()
-        run: docker compose down -v
+    # >>> добавлено: сохраняем образ в tar
+    - name: Save image to tar
+      run: docker save -o pythonapp.tar pythonapp:latest
+
+    # >>> добавлено: публикуем артефакт между job-ами
+    - name: Upload image artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: pythonapp-image
+        path: pythonapp.tar
+        if-no-files-found: error
+
+    - name: Teardown
+      if: always()
+      run: docker compose down -v
+
 
   deploy:
     name: Deploy
@@ -43,6 +56,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: pythonapp-image
+          path: .
       - name: Save image to tar
         run: docker save -o pythonapp.tar pythonapp:latest
 
